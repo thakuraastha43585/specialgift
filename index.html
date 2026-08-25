@@ -129,6 +129,13 @@
   .ai-row .pill.ghost{box-shadow:0 4px 0 #e6c9c0;}
   .ai-status{font-size:12px; color:#9c6a4e; margin-bottom:8px; min-height:14px;}
 
+
+  .payment-preview{width:100%;background:#fffdfa;border:3px solid var(--gold);border-radius:14px;padding:14px 16px;margin:0 0 14px;box-shadow:0 5px 14px rgba(120,50,20,.08);text-align:center;}
+  .payment-preview .preview-label{font-size:11px;color:#9c6a4e;text-transform:uppercase;letter-spacing:1.2px;font-weight:700;margin-bottom:4px;}
+  .payment-preview h3{font-family:'Caveat',cursive;color:var(--ink-red);font-size:28px;margin:0 0 2px;}
+  .payment-preview .preview-name{font-family:'Caveat',cursive;font-size:23px;color:var(--text-dark);margin-bottom:5px;}
+  .payment-preview p{font-size:12px;color:#5c4a3f;line-height:1.4;margin:0;}
+
   .price-card{ width:100%; background:#fffaf5; border:2px dashed #f0c9b8; border-radius:16px; padding:16px; margin-bottom:14px; }
   .price-row{display:flex; justify-content:space-between; font-size:14px; margin-bottom:6px; color:#7a6a5f;}
   .price-row.total{font-weight:700; font-size:20px; color:var(--ink-red); border-top:1px dashed #f0c9b8; padding-top:8px; margin-top:8px;}
@@ -385,6 +392,12 @@
       <div class="screen" id="screen-payment">
         <h2 class="plain" style="font-size:28px;">Unlock Your Rakhi Card</h2>
         <p class="subtext">One small gift to make it official 🧿</p>
+        <div class="payment-preview" id="paymentPreview">
+          <div class="preview-label">Your card preview</div>
+          <h3 id="paymentPreviewTitle">Best Brother Award 🏆</h3>
+          <div class="preview-name" id="paymentPreviewName">—</div>
+          <p id="paymentPreviewText">Your personalised Rakhi card is ready. Pay to reveal and share the complete surprise.</p>
+        </div>
         <div class="price-card">
           <div class="price-row"><span>Rakhi Card (Digital)</span><span id="basePrice">₹99</span></div>
           <div class="price-row" id="discountRow" style="display:none;"><span id="discountLabel">Discount</span><span id="discountValue">-₹0</span></div>
@@ -395,7 +408,7 @@
           <button class="pill ghost" onclick="applyCoupon()">Apply</button>
         </div>
         <div class="coupon-msg" id="couponMsg"></div>
-        <p style="font-size:11px; color:#b89a86; margin:0 0 10px;">Try: RAKHI10, RAKHI20, RAKHI30, RAKHI40, RAKHI100</p>
+        <p style="font-size:11px; color:#b89a86; margin:0 0 10px;">Available codes: BRO20, BRO30, BRO40</p>
         <button class="pill wide" onclick="payNow()">Pay & Reveal Card</button>
         <p style="font-size:11px; color:#b89a86; margin-top:10px;">Secured by Razorpay</p>
       </div>
@@ -482,6 +495,13 @@ function applyNamesToUI(){
 
   document.getElementById('cert2Name').innerText = `Best ${rel==='sister'?'Sister':'Brother'} Of The World`;
   document.getElementById('cert2Body').innerText = `This is to certify that ${state.to} has been recognized as the World's Best ${rel==='sister'?'Sister':'Brother'}!`;
+
+  const previewTitle = document.getElementById('paymentPreviewTitle');
+  const previewName = document.getElementById('paymentPreviewName');
+  const previewText = document.getElementById('paymentPreviewText');
+  if(previewTitle) previewTitle.innerText = rel==='sister' ? 'Best Sister Award 🏆' : 'Best Brother Award 🏆';
+  if(previewName) previewName.innerText = state.to || '—';
+  if(previewText) previewText.innerText = `Your personalised Rakhi card for ${state.to || 'your special someone'} is ready. Pay to reveal and share the complete surprise.`;
 }
 
 const screenIds = ['form','ask','dare','excited','youaremy','gifts','gift1','gift2','gift3','message','payment','final'];
@@ -548,7 +568,7 @@ async function generateAIMessage(){
 
 function applyCoupon(){
   const code = document.getElementById('couponInput').value.trim().toUpperCase();
-  const map = { 'RAKHI10':10, 'RAKHI20':20, 'RAKHI30':30, 'RAKHI40':40, 'RAKHI100':100 };
+  const map = { 'BRO20':20, 'BRO30':30, 'BRO40':40 };
   const msgEl = document.getElementById('couponMsg');
   if(map.hasOwnProperty(code)){
     state.discountPercent = map[code];
