@@ -462,8 +462,9 @@ function toggleMusic(){
 }
 
 /* ============ STATE ============ */
-let state = { from:'', to:'', relation:'brother', total:99, discountPercent:0, message:'' };
+let state = { from:'', to:'', relation:'brother', total:99, discountPercent:0, message:'', paid:false, shareId:'' };
 let giftsOpened = { 1:false, 2:false, 3:false };
+let isSharedViewer = false;
 
 function selectRelation(r){
   state.relation = r;
@@ -629,15 +630,35 @@ function payNow(){
    expire or lose, because there's nothing stored anywhere else. If you want
    a short link instead of a long one, run this file behind any URL shortener. */
 function completeOrder(){
+  // Payment has completed. Create a unique, self-contained link for THIS card.
+  // No coupon/payment data is stored in the shared link.
   state.message = document.getElementById('messageBox').value;
+  state.paid = true;
+  state.shareId = (Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,10)).toUpperCase();
+
   document.getElementById('finalMessage').innerText = state.message;
+  applyNamesToUI();
   goTo('final');
 
-  const payload = { f: state.from, t: state.to, r: state.relation, m: state.message };
-  const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  // The link contains the personalised card data, so the recipient never
+  // falls back to the blank/default website. The random shareId makes every
+  // completed purchase generate a unique URL even if the content is identical.
+  const payload = {
+    v: 2,
+    id: state.shareId,
+    f: state.from,
+    t: state.to,
+    r: state.relation,
+    m: state.message
+  };
+  const json = JSON.stringify(payload);
+  const encoded = btoa(unescape(encodeURIComponent(json)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
   const url = location.origin + location.pathname + '?card=' + encoded;
+
   document.getElementById('shareLink').innerText = url;
   document.getElementById('shareSection').style.display = 'block';
+  document.getElementById('viewerNote').style.display = 'none';
   window.__shareUrl = url;
 }
 function copyShareLink(){
@@ -652,15 +673,37 @@ function copyShareLink(){
   const params = new URLSearchParams(location.search);
   const card = params.get('card');
   if(!card) return;
+
   try{
-    const payload = JSON.parse(decodeURIComponent(escape(atob(card))));
-    state.from = payload.f; state.to = payload.t; state.relation = payload.r; state.message = payload.m;
+    // Restore the exact personalised card from the URL.
+    const normalized = card.replace(/-/g,'+').replace(/_/g,'/');
+    const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
+    const payload = JSON.parse(decodeURIComponent(escape(atob(padded))));
+
+    if(!payload || !payload.f || !payload.t || !payload.m) throw new Error('Invalid card');
+
+    isSharedViewer = true;
+    state.from = payload.f;
+    state.to = payload.t;
+    state.relation = payload.r === 'sister' ? 'sister' : 'brother';
+    state.message = payload.m;
+    state.paid = true;
+    state.shareId = payload.id || '';
+
+    // Apply every personalised field before showing anything.
     applyNamesToUI();
+    document.getElementById('messageBox').value = state.message;
     document.getElementById('finalMessage').innerText = state.message;
+
+    // A recipient opening the link never sees the builder/payment page.
+    // They see the already-created, already-paid card immediately.
     document.getElementById('shareSection').style.display = 'none';
     document.getElementById('viewerNote').style.display = 'block';
     goTo('final');
-  }catch(e){ /* malformed link, ignore and show the normal start screen */ }
+  }catch(e){
+    // Invalid/malformed links behave like a normal fresh visit.
+    console.warn('Could not restore shared Rakhi card:', e);
+  }
 })();
 </script>
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
