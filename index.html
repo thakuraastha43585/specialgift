@@ -467,6 +467,7 @@
 <audio id="bgMusic" loop></audio>
 <button class="music-toggle muted" id="musicToggle" onclick="toggleMusic()" title="Add a music link in the code to enable">🎵</button>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 /* ============ MUSIC SETUP ============
    To hard-code your own background track, paste a direct audio file URL
@@ -681,6 +682,23 @@ function updatePrice(){
 }
 updatePrice();
 
+/* ============ SUPABASE ============
+   Cards are now stored in Supabase instead of being packed into the URL
+   as base64. The share link only carries a short random code; the actual
+   from/to/relation/message data lives in the `rakhi_cards` table. This
+   sidesteps the base64-in-URL corruption bug entirely and gives genuinely
+   short links without depending on a third-party shortener like is.gd. */
+const SUPABASE_URL = "https://ophnjvpuhoplehzfblsu.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9waG5qdnB1aG9wbGVoemZibHN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxMjM4MjAsImV4cCI6MjEwMDY5OTgyMH0.Areq5ybLdztNDleqGiLJCizpOkDcXRlznlu4jpDqQb8";
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+function generateShortCode(len = 7){
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'; // no 0/O/1/l/I
+  let out = '';
+  for(let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+
 /* ============ RAZORPAY ============ */
 // Add your Razorpay Key ID below before going live.
 const RAZORPAY_KEY_ID = "rzp_live_SvD983baZpuP2A";
@@ -706,29 +724,47 @@ function payNow(){
 }
 
 /* ============ SHAREABLE PERMANENT LINK ============
-   Since this card is a single self-contained file with no server/database,
-   the "permanent" link works by encoding the finished card's data directly
-   into the URL itself. As long as this exact HTML file stays hosted at a
-   stable address, that link will always re-open the same card — nothing to
-   expire or lose, because there's nothing stored anywhere else. Opening a
+   The finished card is saved as a row in Supabase (table: rakhi_cards),
+   keyed by a short random code. The share link only carries that code
+   (?c=CODE), so it's short by construction — no base64, no third-party
+   shortener, nothing that can get corrupted by URL encoding. Opening a
    shared link replays the whole experience (ask / excited / you-are-my /
    gifts / final) but skips the payment page, since it's already been paid
-   for and sent as a gift. */
+   for and sent as a gift.
+
+   If Supabase can't be reached for some reason, we fall back to the old
+   self-contained base64-in-URL link (shortened via is.gd) so sharing never
+   completely breaks. */
 async function completeOrder(){
   state.message = document.getElementById('messageBox').value;
   document.getElementById('finalMessage').innerText = state.message;
   goTo('final');
 
-  const payload = { f: state.from, t: state.to, r: state.relation, m: state.message };
-  const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
-  const longUrl = location.origin + location.pathname + '?card=' + encodeURIComponent(encoded);
-
   document.getElementById('shareSection').style.display = 'block';
   document.getElementById('viewerNote').style.display = 'none';
-  document.getElementById('shareLink').innerText = 'Creating your short link…';
-  window.__shareUrl = longUrl;
+  document.getElementById('shareLink').innerText = 'Creating your link…';
 
-  const shortUrl = await shortenShareUrl(longUrl);
+  const code = generateShortCode();
+  let shortUrl;
+
+  try{
+    const { error } = await supabaseClient.from('rakhi_cards').insert({
+      code,
+      from_name: state.from,
+      to_name: state.to,
+      relation: state.relation,
+      message: state.message
+    });
+    if(error) throw error;
+    shortUrl = location.origin + location.pathname + '?c=' + code;
+  } catch(e){
+    console.error('Supabase save failed, falling back to base64 link:', e);
+    const payload = { f: state.from, t: state.to, r: state.relation, m: state.message };
+    const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+    const longUrl = location.origin + location.pathname + '?card=' + encodeURIComponent(encoded);
+    shortUrl = await shortenShareUrl(longUrl);
+  }
+
   document.getElementById('shareLink').innerText = shortUrl;
   window.__shareUrl = shortUrl;
 }
@@ -776,35 +812,60 @@ function downloadCertificate(){
 }
 
 /* ============ RESTORE FROM SHARED LINK ============
-   The recipient sees the full site — every screen except payment — because
-   everything needed to rebuild the exact card the sender made (names,
-   relation, and message) is encoded directly in the link itself. There is
-   no server and nothing is stored anywhere: the link IS the card. As long
-   as this HTML file stays hosted at the same address, the link works
-   forever for anyone who opens it, and always shows the complete,
-   already-paid-for card — never a locked/preview version. */
-(function restoreFromLink(){
+   The recipient sees the full site — every screen except payment.
+   New-style links carry a short code (?c=CODE); the card's actual data is
+   looked up from the `rakhi_cards` table in Supabase. Old-style links from
+   before this change (?card=BASE64) still work too, decoded locally with
+   no server round-trip needed. Either way, opening a shared link always
+   shows the complete, already-paid-for card — never a locked/preview
+   version. */
+(async function restoreFromLink(){
   const params = new URLSearchParams(location.search);
+  const code = params.get('c');
   const card = params.get('card');
-  if(!card) return;
-  try{
-    const payload = JSON.parse(decodeURIComponent(escape(atob(card))));
-    if(!payload || typeof payload !== 'object') throw new Error('bad payload');
-    isSharedView = true;
-    state.from = payload.f || '';
-    state.to = payload.t || '';
-    state.relation = payload.r === 'sister' ? 'sister' : 'brother';
-    state.message = payload.m || defaultMessageText({ relation: state.relation, from: state.from });
-    selectRelation(state.relation);
-    applyNamesToUI();
-    document.getElementById('messageBox').value = state.message;
-    document.getElementById('skipToFinalBtn').style.display = 'inline-block';
-    goTo('ask');
-  }catch(e){
-    // Malformed/corrupted link: fall back to the normal create-a-card start
-    // screen instead of leaving the page broken or blank.
-    isSharedView = false;
+  if(!code && !card) return;
+
+  let payload = null;
+
+  if(code){
+    try{
+      const { data, error } = await supabaseClient
+        .from('rakhi_cards')
+        .select('from_name,to_name,relation,message')
+        .eq('code', code)
+        .single();
+      if(error || !data) throw error || new Error('card not found');
+      payload = { f: data.from_name, t: data.to_name, r: data.relation, m: data.message };
+    }catch(e){
+      console.error('Could not load shared card from Supabase:', e);
+      payload = null;
+    }
+  } else if(card){
+    try{
+      payload = JSON.parse(decodeURIComponent(escape(atob(card))));
+      if(!payload || typeof payload !== 'object') throw new Error('bad payload');
+    }catch(e){
+      payload = null;
+    }
   }
+
+  if(!payload){
+    // Missing/expired/corrupted link: fall back to the normal create-a-card
+    // start screen instead of leaving the page broken or blank.
+    isSharedView = false;
+    return;
+  }
+
+  isSharedView = true;
+  state.from = payload.f || '';
+  state.to = payload.t || '';
+  state.relation = payload.r === 'sister' ? 'sister' : 'brother';
+  state.message = payload.m || defaultMessageText({ relation: state.relation, from: state.from });
+  selectRelation(state.relation);
+  applyNamesToUI();
+  document.getElementById('messageBox').value = state.message;
+  document.getElementById('skipToFinalBtn').style.display = 'inline-block';
+  goTo('ask');
 })();
 </script>
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
