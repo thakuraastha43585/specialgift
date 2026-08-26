@@ -229,6 +229,10 @@
   <div class="frame">
     <div class="card" id="card">
       <div class="browserbar"><span></span><span></span><span></span></div>
+      <!-- Only shown to someone opening a gifted/shared link: lets them jump
+           straight to the finished card instead of clicking through the
+           whole reveal, guaranteeing they can see it "in full" any time. -->
+      <button id="skipToFinalBtn" class="pill ghost small2" style="display:none; position:absolute; top:40px; right:10px; z-index:5;" onclick="skipToFinal()">Skip to full card ➜</button>
 
       <!-- FORM (now includes the message + AI generator + certificate preview) -->
       <div class="screen active" id="screen-form">
@@ -578,13 +582,22 @@ function continueFromGifts(){
 function continueFromCertificate(){
   if(isSharedView){
     // A gifted / shared link skips payment entirely — it was already paid for.
-    document.getElementById('finalMessage').innerText = state.message;
-    document.getElementById('shareSection').style.display = 'none';
-    document.getElementById('viewerNote').style.display = 'block';
-    goTo('final');
+    skipToFinal();
   } else {
     goTo('payment');
   }
+}
+
+/* Jumps a recipient straight to the finished, fully-built card. Used both
+   as the natural end of the reveal flow and as an explicit "skip" escape
+   hatch (button shown only on shared/gifted links) so the person you send
+   this to can always see the complete card, even if they don't click
+   through every step of the surprise. */
+function skipToFinal(){
+  document.getElementById('finalMessage').innerText = state.message;
+  document.getElementById('shareSection').style.display = 'none';
+  document.getElementById('viewerNote').style.display = 'block';
+  goTo('final');
 }
 
 function defaultMessageText(live){
@@ -763,20 +776,35 @@ function downloadCertificate(){
 }
 
 /* ============ RESTORE FROM SHARED LINK ============
-   The recipient sees the full site — every page except payment. */
+   The recipient sees the full site — every screen except payment — because
+   everything needed to rebuild the exact card the sender made (names,
+   relation, and message) is encoded directly in the link itself. There is
+   no server and nothing is stored anywhere: the link IS the card. As long
+   as this HTML file stays hosted at the same address, the link works
+   forever for anyone who opens it, and always shows the complete,
+   already-paid-for card — never a locked/preview version. */
 (function restoreFromLink(){
   const params = new URLSearchParams(location.search);
   const card = params.get('card');
   if(!card) return;
   try{
     const payload = JSON.parse(decodeURIComponent(escape(atob(card))));
+    if(!payload || typeof payload !== 'object') throw new Error('bad payload');
     isSharedView = true;
-    state.from = payload.f; state.to = payload.t; state.relation = payload.r; state.message = payload.m;
+    state.from = payload.f || '';
+    state.to = payload.t || '';
+    state.relation = payload.r === 'sister' ? 'sister' : 'brother';
+    state.message = payload.m || defaultMessageText({ relation: state.relation, from: state.from });
     selectRelation(state.relation);
     applyNamesToUI();
     document.getElementById('messageBox').value = state.message;
+    document.getElementById('skipToFinalBtn').style.display = 'inline-block';
     goTo('ask');
-  }catch(e){ /* malformed link, ignore and show the normal start screen */ }
+  }catch(e){
+    // Malformed/corrupted link: fall back to the normal create-a-card start
+    // screen instead of leaving the page broken or blank.
+    isSharedView = false;
+  }
 })();
 </script>
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
