@@ -721,7 +721,7 @@ async function completeOrder(){
 
   const payload = { f: state.from, t: state.to, r: state.relation, m: state.message };
   const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
-  const longUrl = location.origin + location.pathname + '?card=' + encoded;
+  const longUrl = location.origin + location.pathname + '?card=' + encodeURIComponent(encoded);
 
   document.getElementById('shareSection').style.display = 'block';
   document.getElementById('viewerNote').style.display = 'none';
